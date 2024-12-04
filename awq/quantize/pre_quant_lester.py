@@ -13,12 +13,18 @@ from tinychat.models import LlavaLlamaForCausalLM
 
 from .auto_scale_lester import auto_scale_block, apply_scale
 from .auto_clip import auto_clip_block, apply_clip
+from copy import deepcopy
+from .fake_quant_lester import quantize_opt_layer, QuantizedLinear
 
 __all__ = ["run_awq"]
 
 
 def get_named_linears(module):
-    return {name: m for name, m in module.named_modules() if isinstance(m, nn.Linear)}
+    return {
+        name: m
+        for name, m in module.named_modules()
+        if (isinstance(m, nn.Linear) or isinstance(m, QuantizedLinear))
+    }
 
 
 def get_blocks(model):
@@ -132,6 +138,7 @@ def run_awq(
     del samples
     layers[0] = layers[0].module  # restore
     inps = inps[0]
+    inps_quant = inps.clone()
 
     layers[0] = layers[0].cpu()
     move_embed(model, "cpu")
@@ -147,7 +154,19 @@ def run_awq(
     # solve layer by layer
     for i in tqdm.tqdm(range(len(layers)), desc="Running AWQ..."):
         layer = layers[i]
+        layer_quant = deepcopy(layer)
+        layer_quant = quantize_opt_layer(
+            layer=layer_quant,
+            w_n_bits=w_bit,
+            a_n_bits=w_bit,
+            zero_point=q_config["zero_point"],
+            group_size=q_config["q_group_size"],
+            act_quant=q_config["act_quant"],
+        )
+
         layer = layer.cuda()
+        layer_quant = layer_quant.cuda()
+
         named_linears = get_named_linears(layer)
 
         # firstly, get input features of all linear layers
@@ -164,13 +183,42 @@ def run_awq(
                     functools.partial(cache_input_hook, name=name, feat_dict=input_feat)
                 )
             )
+
         inps = inps.to(next(layer.parameters()).device)  # in case multi-gpu
         # get output as next layer's input
         inps = layer(inps, **layer_kwargs)[0]
+
         for h in handles:
             h.remove()
         # now solve for scaling and clipping
         input_feat = {k: torch.cat(v, dim=0) for k, v in input_feat.items()}
+
+        # Clear GPU memory
+        torch.cuda.empty_cache()
+
+        #### repeat the same procedure for the quantized model
+        input_feat_quant = defaultdict(list)
+        named_linears_quant = get_named_linears(layer_quant)
+        handles = []
+        for name in named_linears_quant:
+            handles.append(
+                named_linears_quant[name].register_forward_hook(
+                    functools.partial(
+                        cache_input_hook, name=name, feat_dict=input_feat_quant
+                    )
+                )
+            )
+        inps_quant = inps_quant.to(next(layer_quant.parameters()).device)
+        inps_quant = layer_quant(inps_quant, **layer_kwargs)[0]
+
+        for h in handles:
+            h.remove()
+        input_feat_quant = {k: torch.cat(v, dim=0) for k, v in input_feat_quant.items()}
+        print(input_feat.keys())
+        print(input_feat_quant.keys())
+        # print(list(input_feat.values())[0].device)
+        # print(list(input_feat_quant.values())[0].device)
+        print("-" * 10)
 
         # Clear GPU memory
         torch.cuda.empty_cache()
@@ -184,6 +232,7 @@ def run_awq(
                 w_bit=w_bit,
                 q_config=q_config,
                 input_feat=input_feat,
+                input_feat_quant=input_feat_quant,
             )
             # apply_scale(layer, scales_list, input_feat_dict=input_feat)
             apply_scale(layers[i], scales_list, input_feat_dict=input_feat)
@@ -195,22 +244,25 @@ def run_awq(
         # Clear GPU memory
         torch.cuda.empty_cache()
 
-        if mse_range:
-            clip_list = auto_clip_block(
-                layer,
-                w_bit=w_bit,
-                q_config=q_config,
-                input_feat=input_feat,
-            )
-            apply_clip(layer, clip_list)
-            # append prefix to make names global
-            awq_results["clip"] += append_str_prefix(
-                clip_list, get_op_name(model, layer) + "."
-            )
+        # if mse_range:
+        #     clip_list = auto_clip_block(
+        #         layer,
+        #         w_bit=w_bit,
+        #         q_config=q_config,
+        #         input_feat=input_feat,
+        #     )
+        #     apply_clip(layer, clip_list)
+        #     # append prefix to make names global
+        #     awq_results["clip"] += append_str_prefix(
+        #         clip_list, get_op_name(model, layer) + "."
+        #     )
 
         layer = layer.cpu()
+        layer_quant = layer_quant.cpu()
+
         # Haotian: check activation replacement
         del input_feat
+        del input_feat_quant
         gc.collect()
         torch.cuda.empty_cache()
 
