@@ -59,7 +59,13 @@ def scale_activations(module):
 
 # core quantization method (simulated quantization)
 def pseudo_quantize_tensor(
-    w, n_bit=8, zero_point=True, q_group_size=-1, inplace=False, get_scale_zp=False
+    w,
+    n_bit=8,
+    zero_point=True,
+    q_group_size=-1,
+    inplace=False,
+    get_scale_zp=False,
+    **kwargs,
 ):
     org_w_shape = w.shape
     if q_group_size > 0:
@@ -82,8 +88,8 @@ def pseudo_quantize_tensor(
         scales = max_val / max_int
         zeros = 0
 
-    assert torch.isnan(scales).sum() == 0
-    assert torch.isnan(w).sum() == 0
+    # assert torch.isnan(scales).sum() == 0
+    # assert torch.isnan(w).sum() == 0
 
     if inplace:
         (
@@ -93,6 +99,7 @@ def pseudo_quantize_tensor(
         w = (
             torch.clamp(torch.round(w / scales) + zeros, min_int, max_int) - zeros
         ) * scales
+
     assert torch.isnan(w).sum() == 0
 
     w = w.reshape(org_w_shape)
