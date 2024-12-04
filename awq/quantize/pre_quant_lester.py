@@ -156,7 +156,7 @@ def run_awq(
         layer = layers[i]
         layer_quant = deepcopy(layer)
         layer_quant = quantize_opt_layer(
-            layer=layer_quant,
+            m=layer_quant,
             w_n_bits=w_bit,
             a_n_bits=w_bit,
             zero_point=q_config["zero_point"],
