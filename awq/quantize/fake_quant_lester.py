@@ -37,6 +37,7 @@ class QuantizedLinear(nn.Module):
         w_n_bits: int = 4,
         a_n_bits: int = 4,
         act_quant: Literal["per_token", "per_tensor", "none"] = "per_token",
+        quantize_output: bool = False,
     ):
         super().__init__()
         assert act_quant in ["per_token", "per_tensor", "none"]
@@ -81,6 +82,13 @@ class QuantizedLinear(nn.Module):
             self.act_quant_name = "None"
             self.act_quant = lambda x: x
 
+        if quantize_output:
+            self.output_quant_name = self.act_quant_name
+            self.output_quant = self.act_quant
+        else:
+            self.output_quant_name = "None"
+            self.output_quant = lambda x: x
+
     def to(self, *args, **kwargs):
         super(QuantizedLinear, self).to(*args, **kwargs)
         self.weight = self.weight.to(*args, **kwargs)
@@ -93,6 +101,7 @@ class QuantizedLinear(nn.Module):
 
         x = self.act_quant(x)
         x = F.linear(x, self.weight, self.bias)
+        x = self.output_quant(x)
 
         return x
 
@@ -105,6 +114,7 @@ class QuantizedLinear(nn.Module):
         zero_point: bool = True,
         group_size: int = 128,
         act_quant: Literal["per_token", "per_tensor", "none"] = "per_token",
+        quantize_output: bool = False,
     ):
 
         awq_linear = cls(
@@ -114,6 +124,7 @@ class QuantizedLinear(nn.Module):
             w_n_bits=w_n_bits,
             a_n_bits=a_n_bits,
             act_quant=act_quant,
+            quantize_output=quantize_output,
         )
 
         awq_linear.weight.data = pseudo_quantize_tensor(
@@ -143,17 +154,9 @@ def quantize_opt_model(
     )
 
     for name, m in model.model.named_modules():
-        if isinstance(m, OPTDecoderLayer):
-            m.fc1 = QuantizedLinear.from_linear(
-                m.fc1,
-                w_n_bits=w_n_bits,
-                a_n_bits=a_n_bits,
-                zero_point=zero_point,
-                group_size=group_size,
-                act_quant=act_quant,
-            )
-            m.fc2 = QuantizedLinear.from_linear(
-                m.fc2,
+        if isinstance(m, OPTAttention) or isinstance(m, OPTDecoderLayer):
+            model.model = quantize_opt_layer(
+                m,
                 w_n_bits=w_n_bits,
                 a_n_bits=a_n_bits,
                 zero_point=zero_point,
@@ -165,7 +168,7 @@ def quantize_opt_model(
 
 
 def quantize_opt_layer(
-    layer: nn.Module,
+    m: nn.Module,
     w_n_bits: int = 4,
     a_n_bits: int = 4,
     zero_point: bool = True,
@@ -174,24 +177,63 @@ def quantize_opt_layer(
 ):
     from transformers.models.opt.modeling_opt import (
         OPTDecoderLayer,
+        OPTAttention,
     )
 
-    if isinstance(layer, OPTDecoderLayer):
-        layer.fc1 = QuantizedLinear.from_linear(
-            layer.fc1,
+    if isinstance(m, OPTDecoderLayer):
+        m.fc1 = QuantizedLinear.from_linear(
+            m.fc1,
             w_n_bits=w_n_bits,
             a_n_bits=a_n_bits,
             zero_point=zero_point,
             group_size=group_size,
             act_quant=act_quant,
         )
-        layer.fc2 = QuantizedLinear.from_linear(
-            layer.fc2,
+        m.fc2 = QuantizedLinear.from_linear(
+            m.fc2,
             w_n_bits=w_n_bits,
             a_n_bits=a_n_bits,
             zero_point=zero_point,
             group_size=group_size,
             act_quant=act_quant,
+        )
+    elif isinstance(m, OPTAttention):
+        # Her we simulate quantizing BMM inputs by quantizing the output of q_proj, k_proj, v_proj
+        m.q_proj = QuantizedLinear.from_linear(
+            m.q_proj,
+            w_n_bits=w_n_bits,
+            a_n_bits=a_n_bits,
+            zero_point=zero_point,
+            group_size=group_size,
+            act_quant=act_quant,
+            quantize_output=True,
+        )
+        m.k_proj = QuantizedLinear.from_linear(
+            m.k_proj,
+            w_n_bits=w_n_bits,
+            a_n_bits=a_n_bits,
+            zero_point=zero_point,
+            group_size=group_size,
+            act_quant=act_quant,
+            quantize_output=True,
+        )
+        m.v_proj = QuantizedLinear.from_linear(
+            m.v_proj,
+            w_n_bits=w_n_bits,
+            a_n_bits=a_n_bits,
+            zero_point=zero_point,
+            group_size=group_size,
+            act_quant=act_quant,
+            quantize_output=True,
+        )
+        m.out_proj = QuantizedLinear.from_linear(
+            m.out_proj,
+            w_n_bits=w_n_bits,
+            a_n_bits=a_n_bits,
+            zero_point=zero_point,
+            group_size=group_size,
+            act_quant=act_quant,
+            quantize_output=True,
         )
 
-    return layer
+    return m
