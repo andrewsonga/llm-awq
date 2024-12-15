@@ -68,6 +68,14 @@ python setup.py install
 (1) Open the jupyter notebook `demos/mixed_precision_demo.ipynb` and press "Run All".
 
 #### AWQ Experiments
+
+First, let's `cd` into the right path from the root directory. You should find `test_awq.py` in the current directory.
+
+```{bash}
+cd scripts/tiny_ml_project
+```
+
+
 (1) To perform evaluation and save awq results to local storage:
 ```{bash}
 CUDA_VISIBLE_DEVICES=7 python3 test_awq.py --model_kwrd opt-1.3b --run_awq --save_awq_result --awq_path awq_results.pt
