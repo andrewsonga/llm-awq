@@ -10,8 +10,8 @@ from datasets import load_dataset
 from torch import nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from awq.quantize.pre_quant_lester import apply_awq, run_awq
-from awq.quantize.fake_quant_lester import quantize_opt_model
+from awq.quantize.pre_quant_new import apply_awq, run_awq
+from awq.quantize.fake_quant_new import quantize_opt_model
 
 ActQuantType = Literal["per_token", "per_tensor", "none", "per_channel"]
 

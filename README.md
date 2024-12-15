@@ -2,14 +2,13 @@
 
 **Students**: Sizhe Lester Li and Chonghyuk Andrew Song
 
-### Abstract
+### Abstract (OOD)
 In this project, we investigate the challenges and opportunities of applying W4A4 quantization to Large Language Models. We explore how different techniques, under two different paths (AWQ and Mixed-Precision), can close gaps from FP16. Our experiments show that both paths require non-trivial considerations of design choices. In AWQ, the original optimal search objective does not consider activation quantization. In Mixed-Precision, \todo{ASK andrew}. Ablatively, we analyze how different quantization methods result in different performances, assess our design choices, and investigate whether different layers of the model play different roles in performance. Our best model demonstrates a small gap, valued at 0.98, between W4A4 and FP16. We hope that our results and analyses will inspire future research on closing the gap between W4A4 and FP16 even further. We deeply thank the course staff for helping us understand the challenges in this area.   
     
 ## Environment Setup
 This is a repository forked from the original [AWQ repo](https://github.com/andrewsonga/llm-awq). Here, we attach their installation guides:
 
 ### New Files
-Friendly disclaimer: the names of these files are not representative of the efforts of each member. 
 
 ```
 --awq
@@ -17,14 +16,20 @@ Friendly disclaimer: the names of these files are not representative of the effo
    |
    |---quantize
           |
-          |------auto_clip_lester.py
-          |------auto_scale_lester.py
-          |------fake_quant_lester.py
-          |------pre_quant_lester.py
+          |------auto_clip_new.py
+          |------auto_scale_new.py
+          |------fake_quant_new.py
+          |------pre_quant_new.py
    |----examples
           |
-          |------andrew_test_mixed_precision.ipynb
-          |------lester_test_activation_quant.ipynb
+          |------test_mixed_precision.ipynb
+          |------test_activation_quant.ipynb
+    |---scripts
+          |
+          |---tiny_ml_project
+                   |
+                   |
+                   |-------test_awq.py
 
 ```
 
@@ -56,3 +61,30 @@ pip install -e .
 cd awq/kernels
 python setup.py install
 ```
+
+### Reproducing experiments
+
+#### AWQ Experiments
+
+To perform evaluation and save awq results to local storage:
+```{bash}
+CUDA_VISIBLE_DEVICES=7 python3 test_awq.py --model_kwrd opt-1.3b --run_awq --save_awq_result --awq_path awq_results.pt
+```
+
+To load `awq_results.pt` that is locally stored and perform evaluation:
+```{bash}
+CUDA_VISIBLE_DEVICES=7 python3 test_awq.py --model_kwrd opt-1.3b  --load_awq_result --awq_path awq_results.pt
+```
+
+By default, we perform W4A4 with per-channel activation quantization, but we can modify it by
+```{bash}
+CUDA_VISIBLE_DEVICES=7 python3 test_awq.py --model_kwrd opt-1.3b  --load_awq_result --awq_path awq_results.pt --w_n_bits 8 --a_n_bits 8 --q_group_size --act_quant {per_token/per_tensor//per_channel/none}
+```
+, where `q_group_size` governs the groun size for weight quantization.
+
+
+To evaluate the original AWQ objective against the new objective, run:
+```{bash}
+CUDA_VISIBLE_DEVICES=7 python3 test_awq.py --model_kwrd opt-1.3b  --load_awq_result --awq_path awq_results.pt --act_quant none --act_quant_override per_channel
+```
+This will result in AWQ using using "none" activation quantization, defaulting to the original objective. However, per_channel activation quantization will still be performed on the inference model after AWQ results are applied.

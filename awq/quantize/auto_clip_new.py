@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from .quantizer import pseudo_quantize_tensor
 import gc
-from .fake_quant_lester import (
+from .fake_quant_new import (
     quantize_activation_per_token_absmax,
     quantize_activation_per_channel_absmax,
     quantize_activation_per_tensor_absmax,

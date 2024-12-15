@@ -9,7 +9,7 @@ from transformers.activations import GELUActivation
 
 from .qmodule import ScaledActivation
 from ..utils.module import get_op_by_name, get_op_name, set_op_by_name
-from .fake_quant_lester import (
+from .fake_quant_new import (
     quantize_activation_per_token_absmax,
     quantize_activation_per_channel_absmax,
     quantize_activation_per_tensor_absmax,

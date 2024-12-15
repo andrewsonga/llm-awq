@@ -11,11 +11,11 @@ from transformers.models.opt.modeling_opt import OPTForCausalLM
 from transformers.models.llama.modeling_llama import LlamaForCausalLM
 from tinychat.models import LlavaLlamaForCausalLM
 
-from .auto_scale_lester import auto_scale_block, apply_scale
-from .auto_clip_lester import auto_clip_block, apply_clip
+from .auto_scale_new import auto_scale_block, apply_scale
+from .auto_clip_new import auto_clip_block, apply_clip
 
 from copy import deepcopy
-from .fake_quant_lester import quantize_opt_layer, QuantizedLinear
+from .fake_quant_new import quantize_opt_layer, QuantizedLinear
 
 __all__ = ["run_awq"]
 
