@@ -1,5 +1,4 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import tqdm
 import torch
 from torch import nn
@@ -10,27 +9,32 @@ from functools import partial
 
 from .quantizer import pseudo_quantize_tensor
 
+
 @torch.no_grad()
 def quantize_activation_per_token_absmax(t, n_bits=8):
     # t.shape = (input seq_len, hidden_size)
 
     t_shape = t.shape
     t.view(-1, t_shape[-1])
-    scales = t.abs().max(dim=-1, keepdim=True)[0]           # scales.shape = (input seq_len, 1) max along the channel dimension
+    scales = t.abs().max(dim=-1, keepdim=True)[
+        0
+    ]  # scales.shape = (input seq_len, 1) max along the channel dimension
     q_max = 2 ** (n_bits - 1) - 1
     scales.clamp_(min=1e-5).div_(q_max)
     t.div_(scales).round_().mul_(scales)
     return t
 
+
 @torch.no_grad()
 def quantize_activation_per_tensor_absmax(t, n_bits=8):
     t_shape = t.shape
     t.view(-1, t_shape[-1])
-    scales = t.abs().max()                                  # scales.shape = (1) max along the entire tensor    
+    scales = t.abs().max()  # scales.shape = (1) max along the entire tensor
     q_max = 2 ** (n_bits - 1) - 1
     scales.clamp_(min=1e-5).div_(q_max)
     t.div_(scales).round_().mul_(scales)
     return t
+
 
 @torch.no_grad()
 def quantize_activation_per_channel_absmax(t, n_bits=8):
@@ -39,26 +43,31 @@ def quantize_activation_per_channel_absmax(t, n_bits=8):
 
     t_shape = t.shape
     t.view(-1, t_shape[-1])
-    scales = t.abs().max(dim=0, keepdim=True)[0]           # scales.shape = (1, hidden_size) max along the channel dimension
+    scales = t.abs().max(dim=0, keepdim=True)[
+        0
+    ]  # scales.shape = (1, hidden_size) max along the channel dimension
     q_max = 2 ** (n_bits - 1) - 1
     scales.clamp_(min=1e-5).div_(q_max)
     t.div_(scales).round_().mul_(scales)
 
     return t
+
 
 @torch.no_grad()
 def quantize_activation_per_token_absmax_salient(t, outlier_indices, n_bits=8):
     # t.shape = (input seq_len, hidden_size)
     # input_feats = list of tensors of shape (hidden_size,) <- my guess is that len(input_feats) = input seq_len
 
-    assert outlier_indices.dim() == 1           # shape = (1% of hidden_size,)
+    assert outlier_indices.dim() == 1  # shape = (1% of hidden_size,)
 
     t_copy = t.clone()
 
     t_shape = t.shape
     t.view(-1, t_shape[-1])
 
-    scales = t.abs().max(dim=-1, keepdim=True)[0]           # scales.shape = (input seq_len, 1) max along the channel dimension
+    scales = t.abs().max(dim=-1, keepdim=True)[
+        0
+    ]  # scales.shape = (input seq_len, 1) max along the channel dimension
     q_max = 2 ** (n_bits - 1) - 1
     scales.clamp_(min=1e-5).div_(q_max)
     t.div_(scales).round_().mul_(scales)
@@ -66,19 +75,22 @@ def quantize_activation_per_token_absmax_salient(t, outlier_indices, n_bits=8):
     t[..., outlier_indices] = t_copy[..., outlier_indices]
 
     return t
+
 
 @torch.no_grad()
 def quantize_activation_per_channel_absmax_salient(t, outlier_indices, n_bits=8):
     # t.shape = (input seq_len, hidden_size)
     # input_feats = list of tensors of shape (hidden_size,) <- my guess is that len(input_feats) = input seq_len
 
-    assert outlier_indices.dim() == 1           # shape = (1% of hidden_size,)
+    assert outlier_indices.dim() == 1  # shape = (1% of hidden_size,)
 
     t_copy = t.clone()
     t_shape = t.shape
     t.view(-1, t_shape[-1])
 
-    scales = t.abs().max(dim=0, keepdim=True)[0]           # scales.shape = (1, hidden_size) max along the channel dimension
+    scales = t.abs().max(dim=0, keepdim=True)[
+        0
+    ]  # scales.shape = (1, hidden_size) max along the channel dimension
 
     q_max = 2 ** (n_bits - 1) - 1
     scales.clamp_(min=1e-5).div_(q_max)
@@ -87,18 +99,19 @@ def quantize_activation_per_channel_absmax_salient(t, outlier_indices, n_bits=8)
     t[..., outlier_indices] = t_copy[..., outlier_indices]
 
     return t
+
 
 @torch.no_grad()
 def quantize_activation_per_tensor_absmax_salient(t, outlier_indices, n_bits=8):
     # t.shape = (input seq_len, hidden_size)
-    assert outlier_indices.dim() == 1           # shape = (1% of hidden_size,)
+    assert outlier_indices.dim() == 1  # shape = (1% of hidden_size,)
 
     t_copy = t.clone()
 
     t_shape = t.shape
     t.view(-1, t_shape[-1])
-    
-    scales = t.abs().max()                                  # scales.shape = (1) max along the entire tensor    
+
+    scales = t.abs().max()  # scales.shape = (1) max along the entire tensor
     q_max = 2 ** (n_bits - 1) - 1
     scales.clamp_(min=1e-5).div_(q_max)
     t.div_(scales).round_().mul_(scales)
@@ -106,6 +119,7 @@ def quantize_activation_per_tensor_absmax_salient(t, outlier_indices, n_bits=8):
     t[..., outlier_indices] = t_copy[..., outlier_indices]
 
     return t
+
 
 class QuantizedLinear(nn.Module):
     def __init__(
@@ -162,21 +176,21 @@ class QuantizedLinear(nn.Module):
         elif act_quant == "per_token_salient":
             self.act_quant_name = "per_token_salient"
             self.act_quant = partial(
-                quantize_activation_per_token_absmax_salient, 
+                quantize_activation_per_token_absmax_salient,
                 outlier_indices=outlier_indices,
                 n_bits=a_n_bits,
             )
         elif act_quant == "per_tensor_salient":
             self.act_quant_name = "per_tensor_salient"
             self.act_quant = partial(
-                quantize_activation_per_tensor_absmax_salient, 
+                quantize_activation_per_tensor_absmax_salient,
                 outlier_indices=outlier_indices,
                 n_bits=a_n_bits,
             )
         elif act_quant == "per_channel_salient":
             self.act_quant_name = "per_channel_salient"
             self.act_quant = partial(
-                quantize_activation_per_channel_absmax_salient, 
+                quantize_activation_per_channel_absmax_salient,
                 outlier_indices=outlier_indices,
                 n_bits=a_n_bits,
             )
@@ -223,7 +237,7 @@ class QuantizedLinear(nn.Module):
             linear.out_features,
             bias=linear.bias is not None,
             w_n_bits=w_n_bits,
-            a_n_bits=a_n_bits,  
+            a_n_bits=a_n_bits,
             act_quant=act_quant,
             quantize_output=quantize_output,
         )
@@ -270,13 +284,15 @@ class QuantizedLinear(nn.Module):
             n_bit=w_n_bits,
             zero_point=zero_point,
             q_group_size=group_size,
-        ) 
+        )
 
         # Step 1: Find 1% of the salient weight channels according to importance (hint: use torch.topk())
         importance = sum(input_feats).float()
-        outlier_indices = torch.topk(importance, k=int(importance.shape[0] * protection_ratio), dim=0)[1]
+        outlier_indices = torch.topk(
+            importance, k=int(importance.shape[0] * protection_ratio), dim=0
+        )[1]
         assert outlier_indices.dim() == 1
-            
+
         # Step 2: Restore the 1% salient weight channels to their original FP16 values
         outlier = linear.weight.data[:, outlier_indices].clone()
         awq_linear.weight.data[:, outlier_indices] = outlier
@@ -302,7 +318,9 @@ class QuantizedLinear(nn.Module):
 
         # Step 1: Find 1% of the salient weight channels according to importance (hint: use torch.topk())
         importance = sum(input_feats).float()
-        outlier_indices = torch.topk(importance, k=int(importance.shape[0] * protection_ratio), dim=0)[1]
+        outlier_indices = torch.topk(
+            importance, k=int(importance.shape[0] * protection_ratio), dim=0
+        )[1]
         assert outlier_indices.dim() == 1
 
         # this is a linear layer that will eventually enhouse the quantized weights
@@ -313,8 +331,8 @@ class QuantizedLinear(nn.Module):
             w_n_bits=w_n_bits,
             a_n_bits=a_n_bits,
             act_quant=act_quant + "_salient",
-            quantize_output = quantize_output,
-            outlier_indices = outlier_indices,
+            quantize_output=quantize_output,
+            outlier_indices=outlier_indices,
         )
 
         awq_linear.weight.data = pseudo_quantize_tensor(
@@ -351,7 +369,9 @@ class QuantizedLinear(nn.Module):
 
         # Step 1: Find 1% of the salient weight channels according to importance (hint: use torch.topk())
         importance = sum(input_feats).float()
-        outlier_indices = torch.topk(importance, k=int(importance.shape[0] * protection_ratio), dim=0)[1]
+        outlier_indices = torch.topk(
+            importance, k=int(importance.shape[0] * protection_ratio), dim=0
+        )[1]
         assert outlier_indices.dim() == 1
 
         # this is a linear layer that will eventually enhouse the quantized weights
@@ -362,8 +382,8 @@ class QuantizedLinear(nn.Module):
             w_n_bits=w_n_bits,
             a_n_bits=a_n_bits,
             act_quant=act_quant + "_salient",
-            quantize_output = quantize_output,
-            outlier_indices = outlier_indices,
+            quantize_output=quantize_output,
+            outlier_indices=outlier_indices,
         )
 
         awq_linear.weight.data = pseudo_quantize_tensor(
@@ -372,7 +392,7 @@ class QuantizedLinear(nn.Module):
             zero_point=zero_point,
             q_group_size=group_size,
         )
-            
+
         # Step 2: Restore the 1% salient weight channels to their original FP16 values
         outlier = linear.weight.data[:, outlier_indices].clone()
         awq_linear.weight.data[:, outlier_indices] = outlier
@@ -381,6 +401,7 @@ class QuantizedLinear(nn.Module):
             awq_linear.bias.data = linear.bias.data
 
         return awq_linear
+
 
 def quantize_opt(
     model,
@@ -408,11 +429,11 @@ def quantize_opt(
             )
             m.fc2 = QuantizedLinear.from_linear(
                 m.fc2,
-                w_n_bits=w_n_bits,          # new input param
-                a_n_bits=a_n_bits,          # new input param
-                zero_point=zero_point,      # new input param
-                group_size=group_size,      # new input param
-                act_quant=act_quant,        # new input param
+                w_n_bits=w_n_bits,  # new input param
+                a_n_bits=a_n_bits,  # new input param
+                zero_point=zero_point,  # new input param
+                group_size=group_size,  # new input param
+                act_quant=act_quant,  # new input param
             )
         elif isinstance(m, OPTAttention):
             # Her we simulate quantizing BMM inputs by quantizing the output of q_proj, k_proj, v_proj
@@ -445,14 +466,15 @@ def quantize_opt(
             )
             m.out_proj = QuantizedLinear.from_linear(
                 m.out_proj,
-                w_n_bits=w_n_bits,          # new input param
-                a_n_bits=a_n_bits,          # new input param
-                zero_point=zero_point,      # new input param
-                group_size=group_size,      # new input param
-                act_quant=act_quant,        # new input param
+                w_n_bits=w_n_bits,  # new input param
+                a_n_bits=a_n_bits,  # new input param
+                zero_point=zero_point,  # new input param
+                group_size=group_size,  # new input param
+                act_quant=act_quant,  # new input param
             )
 
     return model
+
 
 def quantize_opt_salient_weight_fp16(
     model,
@@ -524,14 +546,15 @@ def quantize_opt_salient_weight_fp16(
             m.out_proj = QuantizedLinear.from_linear_salient_weight(
                 m.out_proj,
                 input_feats["model." + name + ".out_proj"],
-                w_n_bits=w_n_bits,          # new input param
-                a_n_bits=a_n_bits,          # new input param
-                zero_point=zero_point,      # new input param
-                group_size=group_size,      # new input param
-                act_quant=act_quant,        # new input param
+                w_n_bits=w_n_bits,  # new input param
+                a_n_bits=a_n_bits,  # new input param
+                zero_point=zero_point,  # new input param
+                group_size=group_size,  # new input param
+                act_quant=act_quant,  # new input param
             )
 
     return model
+
 
 def quantize_opt_salient_act_fp16(
     model,
@@ -603,14 +626,15 @@ def quantize_opt_salient_act_fp16(
             m.out_proj = QuantizedLinear.from_linear_salient_act(
                 m.out_proj,
                 input_feats["model." + name + ".out_proj"],
-                w_n_bits=w_n_bits,          # new input param
-                a_n_bits=a_n_bits,          # new input param
-                zero_point=zero_point,      # new input param
-                group_size=group_size,      # new input param
-                act_quant=act_quant,        # new input param
+                w_n_bits=w_n_bits,  # new input param
+                a_n_bits=a_n_bits,  # new input param
+                zero_point=zero_point,  # new input param
+                group_size=group_size,  # new input param
+                act_quant=act_quant,  # new input param
             )
 
     return model
+
 
 def quantize_opt_salient_weight_act_fp16(
     model,
@@ -688,11 +712,11 @@ def quantize_opt_salient_weight_act_fp16(
             m.out_proj = QuantizedLinear.from_linear_salient_weight_act(
                 m.out_proj,
                 input_feats["model." + name + ".out_proj"],
-                w_n_bits=w_n_bits,          # new input param
-                a_n_bits=a_n_bits,          # new input param
-                zero_point=zero_point,      # new input param
-                group_size=group_size,      # new input param
-                act_quant=act_quant,        # new input param
+                w_n_bits=w_n_bits,  # new input param
+                a_n_bits=a_n_bits,  # new input param
+                zero_point=zero_point,  # new input param
+                group_size=group_size,  # new input param
+                act_quant=act_quant,  # new input param
                 protection_ratio=protection_ratio,
             )
 
