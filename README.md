@@ -21,14 +21,13 @@ This is a repository forked from the original [AWQ repo](https://github.com/andr
           |------fake_quant_new.py
           |------pre_quant_new.py
           |------wnan_salient.py
-   |----examples
+    |----demos
           |
-          |------test_mixed_precision.ipynb
-          |------test_activation_quant.ipynb
+          |------mixed_precision_demo.ipynb
+          |------activation_quant_demo.ipynb
     |---scripts
           |
           |---tiny_ml_project
-                   |
                    |
                    |-------test_awq.py
 
@@ -65,8 +64,10 @@ python setup.py install
 
 ### Reproducing experiments
 
-#### AWQ Experiments
+#### Mixed Precision Approach (W4A4 + 1% FP16)
+(1) Open the jupyter notebook `demos/mixed_precision_demo.ipynb` and press "Run All".
 
+#### AWQ Experiments
 (1) To perform evaluation and save awq results to local storage:
 ```{bash}
 CUDA_VISIBLE_DEVICES=7 python3 test_awq.py --model_kwrd opt-1.3b --run_awq --save_awq_result --awq_path awq_results.pt
