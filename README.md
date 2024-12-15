@@ -66,24 +66,24 @@ python setup.py install
 
 #### AWQ Experiments
 
-To perform evaluation and save awq results to local storage:
+(1) To perform evaluation and save awq results to local storage:
 ```{bash}
 CUDA_VISIBLE_DEVICES=7 python3 test_awq.py --model_kwrd opt-1.3b --run_awq --save_awq_result --awq_path awq_results.pt
 ```
 
-To load `awq_results.pt` that is locally stored and perform evaluation:
+(2) To load `awq_results.pt` that is locally stored and perform evaluation:
 ```{bash}
 CUDA_VISIBLE_DEVICES=7 python3 test_awq.py --model_kwrd opt-1.3b  --load_awq_result --awq_path awq_results.pt
 ```
 
-By default, we perform W4A4 with per-channel activation quantization, but we can modify it by
+(3) By default, we perform W4A4 with per-channel activation quantization, but we can modify it by
 ```{bash}
 CUDA_VISIBLE_DEVICES=7 python3 test_awq.py --model_kwrd opt-1.3b  --load_awq_result --awq_path awq_results.pt --w_n_bits 8 --a_n_bits 8 --q_group_size --act_quant {per_token/per_tensor//per_channel/none}
 ```
 , where `q_group_size` governs the groun size for weight quantization.
 
 
-To evaluate the original AWQ objective against the new objective, run:
+(4) To evaluate the original AWQ objective against the new objective, run:
 ```{bash}
 CUDA_VISIBLE_DEVICES=7 python3 test_awq.py --model_kwrd opt-1.3b  --load_awq_result --awq_path awq_results.pt --act_quant none --act_quant_override per_channel
 ```
