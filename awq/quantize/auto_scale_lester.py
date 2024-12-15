@@ -9,39 +9,13 @@ from transformers.activations import GELUActivation
 
 from .qmodule import ScaledActivation
 from ..utils.module import get_op_by_name, get_op_name, set_op_by_name
+from .fake_quant_lester import (
+    quantize_activation_per_token_absmax,
+    quantize_activation_per_channel_absmax,
+    quantize_activation_per_tensor_absmax,
+)
 
 __all__ = ["auto_scale_block", "apply_scale"]
-
-
-### lester edits start
-
-
-@torch.no_grad()
-def quantize_activation_per_token_absmax(t, n_bits=8):
-    t_shape = t.shape
-
-    t.view(-1, t_shape[-1])
-    scales = t.abs().max(dim=-1, keepdim=True)[0]
-    q_max = 2 ** (n_bits - 1) - 1
-    scales.clamp_(min=1e-5).div_(q_max)
-    t.div_(scales).round_().mul_(scales)
-    return t
-
-
-@torch.no_grad()
-def quantize_activation_per_tensor_absmax(t, n_bits=8):
-    t_shape = t.shape
-
-    t.view(-1, t_shape[-1])
-    scales = t.abs().max()
-    q_max = 2 ** (n_bits - 1) - 1
-    scales.clamp_(min=1e-5).div_(q_max)
-    t.div_(scales).round_().mul_(scales)
-
-    return t
-
-
-### lester edits end
 
 
 @torch.no_grad()
@@ -143,18 +117,20 @@ def auto_scale_block(
         module_kwargs.pop("use_cache")
 
     # find the best scale ratio
-    def _search_module_scale(block, linears2scale: list, x, x_quant, kwargs={}):
+    def _search_module_scale(
+        block, linears2scale: list, x, quantized_activation, kwargs={}
+    ):
         # w: co, ci
         # x: n, ci
         x = x.to(next(block.parameters()).device)
-        x_quant = x_quant.to(next(block.parameters()).device)
+        quantized_activation = quantized_activation.to(next(block.parameters()).device)
 
         with torch.no_grad():
             org_out = block(x, **kwargs)
             if isinstance(org_out, tuple):
                 org_out = org_out[0]
 
-        x = x_quant
+        # x = x_quant
         x_max = get_act_scale(x)
         # x_max = x_max_quant = get_act_scale(x_quant)
 
@@ -172,20 +148,33 @@ def auto_scale_block(
             scales = scales / (scales.max() * scales.min()).sqrt()
             for fc in linears2scale:
                 fc.weight.mul_(scales.view(1, -1).to(fc.weight.device))
-                fc.weight.data = w_quantize_func(fc.weight.data) / (scales.view(1, -1))
+                fc.weight.data = w_quantize_func(fc.weight.data)
+
+            inp_activation = x.clone() / (scales.view(1, -1))
 
             if q_config["act_quant"] == "none":
-                quantized_x = x
+                quantized_activation = inp_activation
+
             elif q_config["act_quant"] == "per_tensor":
-                quantized_x = quantize_activation_per_tensor_absmax(
-                    x, n_bits=q_config["a_n_bits"]
-                )
-            elif q_config["act_quant"] == "per_token":
-                quantized_x = quantize_activation_per_token_absmax(
-                    x, n_bits=q_config["a_n_bits"]
+                quantized_activation = quantize_activation_per_tensor_absmax(
+                    inp_activation, n_bits=q_config["a_n_bits"]
                 )
 
-            out = block(quantized_x, **kwargs)
+            elif q_config["act_quant"] == "per_token":
+                quantized_activation = quantize_activation_per_token_absmax(
+                    inp_activation, n_bits=q_config["a_n_bits"]
+                )
+
+            elif q_config["act_quant"] == "per_channel":
+                quantized_activation = quantize_activation_per_channel_absmax(
+                    inp_activation, n_bits=q_config["a_n_bits"]
+                )
+
+            else:
+                raise NotImplementedError
+
+            out = block(quantized_activation, **kwargs)
+
             if isinstance(out, tuple):
                 out = out[0]
 
@@ -291,11 +280,14 @@ def apply_scale(module, scales_list, input_feat_dict=None):
         scales.cuda()
 
         if isinstance(prev_op, nn.Linear):
+            print("scaling fc...")
             assert len(layers) == 1
             scale_fc_fc(prev_op, layers[0], scales)
         elif isinstance(prev_op, (nn.LayerNorm, LlamaRMSNorm)):
+            print("scaling layer norm...")
             scale_ln_fcs(prev_op, layers, scales)
         elif isinstance(prev_op, (nn.GELU, BloomGelu, GELUActivation)):
+            print("scaling gelu...")
             new_module = ScaledActivation(prev_op, scales)
             set_op_by_name(module, prev_op_name, new_module)
             scale_gelu_fc(prev_op, layers[0], scales)

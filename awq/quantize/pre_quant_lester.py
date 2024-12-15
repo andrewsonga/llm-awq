@@ -12,7 +12,8 @@ from transformers.models.llama.modeling_llama import LlamaForCausalLM
 from tinychat.models import LlavaLlamaForCausalLM
 
 from .auto_scale_lester import auto_scale_block, apply_scale
-from .auto_clip import auto_clip_block, apply_clip
+from .auto_clip_lester import auto_clip_block, apply_clip
+
 from copy import deepcopy
 from .fake_quant_lester import quantize_opt_layer, QuantizedLinear
 
@@ -153,12 +154,13 @@ def run_awq(
 
     # solve layer by layer
     for i in tqdm.tqdm(range(len(layers)), desc="Running AWQ..."):
+        # for i in tqdm.tqdm(range(len(layers) - 3, len(layers)), desc="Running AWQ..."):
         layer = layers[i]
         layer_quant = deepcopy(layer)
         layer_quant = quantize_opt_layer(
             m=layer_quant,
-            w_n_bits=w_bit,
-            a_n_bits=w_bit,
+            w_n_bits=q_config["w_n_bits"],
+            a_n_bits=q_config["a_n_bits"],
             zero_point=q_config["zero_point"],
             group_size=q_config["q_group_size"],
             act_quant=q_config["act_quant"],
@@ -214,11 +216,9 @@ def run_awq(
         for h in handles:
             h.remove()
         input_feat_quant = {k: torch.cat(v, dim=0) for k, v in input_feat_quant.items()}
-        print(input_feat.keys())
-        print(input_feat_quant.keys())
-        # print(list(input_feat.values())[0].device)
-        # print(list(input_feat_quant.values())[0].device)
-        print("-" * 10)
+        # print(input_feat.keys())
+        # print(input_feat_quant.keys())
+        print("-" * 30)
 
         # Clear GPU memory
         torch.cuda.empty_cache()
@@ -244,18 +244,18 @@ def run_awq(
         # Clear GPU memory
         torch.cuda.empty_cache()
 
-        # if mse_range:
-        #     clip_list = auto_clip_block(
-        #         layer,
-        #         w_bit=w_bit,
-        #         q_config=q_config,
-        #         input_feat=input_feat,
-        #     )
-        #     apply_clip(layer, clip_list)
-        #     # append prefix to make names global
-        #     awq_results["clip"] += append_str_prefix(
-        #         clip_list, get_op_name(model, layer) + "."
-        #     )
+        if mse_range:
+            clip_list = auto_clip_block(
+                layer,
+                w_bit=w_bit,
+                q_config=q_config,
+                input_feat=input_feat,
+            )
+            apply_clip(layer, clip_list)
+            # append prefix to make names global
+            awq_results["clip"] += append_str_prefix(
+                clip_list, get_op_name(model, layer) + "."
+            )
 
         layer = layer.cpu()
         layer_quant = layer_quant.cpu()
@@ -270,5 +270,6 @@ def run_awq(
 
 
 def apply_awq(model, awq_results):
+    print("applying AWQ results...")
     apply_scale(model, awq_results["scale"])
     apply_clip(model, awq_results["clip"])

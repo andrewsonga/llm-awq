@@ -28,6 +28,26 @@ def quantize_activation_per_tensor_absmax(t, n_bits=8):
     return t
 
 
+@torch.no_grad()
+def quantize_activation_per_channel_absmax(t, n_bits=8):
+    # t.shape = (input seq_len, hidden_size)
+    # input_feats = list of tensors of shape (hidden_size,) <- my guess is that len(input_feats) = input seq_len
+
+    t_shape = t.shape
+    t.view(-1, t_shape[-1])
+    scales = t.abs().max(dim=0, keepdim=True)[
+        0
+    ]  # scales.shape = (1, hidden_size) max along the channel dimension
+    q_max = 2 ** (n_bits - 1) - 1
+    scales.clamp_(min=1e-5).div_(q_max)
+    t.div_(scales).round_().mul_(scales)
+
+    return t
+
+
+ActivationQuantType = Literal["per_token", "per_tensor", "none", "per_channel"]
+
+
 class QuantizedLinear(nn.Module):
     def __init__(
         self,
@@ -36,11 +56,11 @@ class QuantizedLinear(nn.Module):
         bias: bool = True,
         w_n_bits: int = 4,
         a_n_bits: int = 4,
-        act_quant: Literal["per_token", "per_tensor", "none"] = "per_token",
+        act_quant: ActivationQuantType = "per_token",
         quantize_output: bool = False,
     ):
         super().__init__()
-        assert act_quant in ["per_token", "per_tensor", "none"]
+        assert act_quant in ["per_token", "per_tensor", "none", "per_channel"]
 
         self.in_features = in_features
         self.out_features = out_features
@@ -73,11 +93,19 @@ class QuantizedLinear(nn.Module):
             self.act_quant = partial(
                 quantize_activation_per_token_absmax, n_bits=a_n_bits
             )
+
         elif act_quant == "per_tensor":
             self.act_quant_name = "per_tensor"
             self.act_quant = partial(
                 quantize_activation_per_tensor_absmax, n_bits=a_n_bits
             )
+
+        elif act_quant == "per_channel":
+            self.act_quant_name = "per_channel"
+            self.act_quant = partial(
+                quantize_activation_per_channel_absmax, n_bits=a_n_bits
+            )
+
         else:
             self.act_quant_name = "None"
             self.act_quant = lambda x: x
@@ -85,6 +113,7 @@ class QuantizedLinear(nn.Module):
         if quantize_output:
             self.output_quant_name = self.act_quant_name
             self.output_quant = self.act_quant
+
         else:
             self.output_quant_name = "None"
             self.output_quant = lambda x: x
@@ -154,8 +183,9 @@ def quantize_opt_model(
     )
 
     for name, m in model.model.named_modules():
-        if isinstance(m, OPTAttention) or isinstance(m, OPTDecoderLayer):
-            model.model = quantize_opt_layer(
+        # if isinstance(m, OPTAttention) or isinstance(m, OPTDecoderLayer):
+        if isinstance(m, OPTDecoderLayer):
+            m = quantize_opt_layer(
                 m,
                 w_n_bits=w_n_bits,
                 a_n_bits=a_n_bits,
@@ -197,43 +227,45 @@ def quantize_opt_layer(
             group_size=group_size,
             act_quant=act_quant,
         )
-    elif isinstance(m, OPTAttention):
-        # Her we simulate quantizing BMM inputs by quantizing the output of q_proj, k_proj, v_proj
-        m.q_proj = QuantizedLinear.from_linear(
-            m.q_proj,
-            w_n_bits=w_n_bits,
-            a_n_bits=a_n_bits,
-            zero_point=zero_point,
-            group_size=group_size,
-            act_quant=act_quant,
-            quantize_output=True,
-        )
-        m.k_proj = QuantizedLinear.from_linear(
-            m.k_proj,
-            w_n_bits=w_n_bits,
-            a_n_bits=a_n_bits,
-            zero_point=zero_point,
-            group_size=group_size,
-            act_quant=act_quant,
-            quantize_output=True,
-        )
-        m.v_proj = QuantizedLinear.from_linear(
-            m.v_proj,
-            w_n_bits=w_n_bits,
-            a_n_bits=a_n_bits,
-            zero_point=zero_point,
-            group_size=group_size,
-            act_quant=act_quant,
-            quantize_output=True,
-        )
-        m.out_proj = QuantizedLinear.from_linear(
-            m.out_proj,
-            w_n_bits=w_n_bits,
-            a_n_bits=a_n_bits,
-            zero_point=zero_point,
-            group_size=group_size,
-            act_quant=act_quant,
-            quantize_output=True,
-        )
+    # elif isinstance(m, OPTAttention):
+    #     # Her we simulate quantizing BMM inputs by quantizing the output of q_proj, k_proj, v_proj
+    #     m.q_proj = QuantizedLinear.from_linear(
+    #         m.q_proj,
+    #         w_n_bits=w_n_bits,
+    #         a_n_bits=a_n_bits,
+    #         zero_point=zero_point,
+    #         group_size=group_size,
+    #         act_quant=act_quant,
+    #         quantize_output=True,
+    #     )
+    #     m.k_proj = QuantizedLinear.from_linear(
+    #         m.k_proj,
+    #         w_n_bits=w_n_bits,
+    #         a_n_bits=a_n_bits,
+    #         zero_point=zero_point,
+    #         group_size=group_size,
+    #         act_quant=act_quant,
+    #         quantize_output=True,
+    #     )
+    #     m.v_proj = QuantizedLinear.from_linear(
+    #         m.v_proj,
+    #         w_n_bits=w_n_bits,
+    #         a_n_bits=a_n_bits,
+    #         zero_point=zero_point,
+    #         group_size=group_size,
+    #         act_quant=act_quant,
+    #         quantize_output=True,
+    #     )
+    #     m.out_proj = QuantizedLinear.from_linear(
+    #         m.out_proj,
+    #         w_n_bits=w_n_bits,
+    #         a_n_bits=a_n_bits,
+    #         zero_point=zero_point,
+    #         group_size=group_size,
+    #         act_quant=act_quant,
+    #         quantize_output=True,
+    #     )
+    else:
+        raise ValueError(f"Module {m} is not supported")
 
     return m
