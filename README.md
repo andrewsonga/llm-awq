@@ -3,7 +3,7 @@
 **Students**: Sizhe Lester Li and Chonghyuk Andrew Song
 
 ### Abstract (OOD)
-In this project, we investigate the challenges and opportunities of applying W4A4 quantization to Large Language Models. We explore how different techniques, under two different paths (AWQ and Mixed-Precision), can close gaps from FP16. Our experiments show that both paths require non-trivial considerations of design choices. In AWQ, the original optimal search objective does not consider activation quantization. In Mixed-Precision, \todo{ASK andrew}. Ablatively, we analyze how different quantization methods result in different performances, assess our design choices, and investigate whether different layers of the model play different roles in performance. Our best model demonstrates a small gap, valued at 0.98, between W4A4 and FP16. We hope that our results and analyses will inspire future research on closing the gap between W4A4 and FP16 even further. We deeply thank the course staff for helping us understand the challenges in this area.   
+In this project, we investigate the challenges and opportunities of applying W4A4 quantization to Large Language Models (LLMs). We explore how different techniques, under two different paths (mixed-precision approach and AWQ), can close gaps from FP16. Our experiments show that both approaches require non-trivial considerations of design choices. For the mixed-precision approach, we find the per-channel activation quantization is essential to achieving comparable accuracy to the Full FP-16 model, even when we perform salient weight and activation protection. In AWQ, the original optimal search objective does not consider activation quantization, and hence needs to be modified accordingly. With respect to the unquantized FP16 model, our best model (W4A4 + 1\% FP16) demonstrates a performance gap of 1.11, 1.17, 1.29 for OPT 1.3B, 2.7B, and 6.7B, respectively. We conduct a variety of experiments to validate our design choices and present a series of insights that will hopefully inspire future work on W4A4 quantization. We deeply thank the course staff for helping us understand the challenges in this area. 
     
 ## Environment Setup
 This is a repository forked from the original [AWQ repo](https://github.com/andrewsonga/llm-awq). Here, we attach their installation guides:
@@ -20,6 +20,7 @@ This is a repository forked from the original [AWQ repo](https://github.com/andr
           |------auto_scale_new.py
           |------fake_quant_new.py
           |------pre_quant_new.py
+          |------wnan_salient.py
    |----examples
           |
           |------test_mixed_precision.ipynb
